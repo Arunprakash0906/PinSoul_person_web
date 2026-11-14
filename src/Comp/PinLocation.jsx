@@ -5,14 +5,17 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import '../css/AllPinSoulLocaiton.css';
 import pinSoulLogo from '../assets/PinSoul_logo.png';
-import { getStoredLocations, saveStoredLocation, getNextLocationId } from '../utils/locationStorage';
+import { getStoredLocations, saveStoredLocation, getNextLocationId, setStoredLocations } from '../utils/locationStorage';
 import {
   appendLocationToSheet,
+  fetchLocationsFromSheet,
   getGoogleToken,
   getSavedToken,
   clearToken,
   getNextSheetLocationId,
-  SPREADSHEET_URL,
+  formatIndiaDateTime12h,
+  getAutoUsername,
+  fetchGoogleUserProfile,
 } from '../services/googleSheetsService';
 
 // Fix default marker icons in Leaflet
@@ -23,7 +26,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-import { categoryConfig, getCategoryIcon, fallbackCategory } from './catgory';
+import { categoryConfig, getCategoryIcon, fallbackCategory, getCategoryDetails } from './catgory';
 export { categoryConfig, getCategoryIcon };
 
 // Marker icon for current target pin position
@@ -69,6 +72,7 @@ export default function PinLocation() {
 
   // Form fields
   const [address, setAddress] = useState('');
+  const [username, setUsername] = useState(() => getAutoUsername() || '');
   const [category, setCategory] = useState(() => Object.keys(categoryConfig)[0] || 'Restaurant');
   const [notes, setNotes] = useState('');
 
@@ -76,13 +80,29 @@ export default function PinLocation() {
   const [saveToGoogle, setSaveToGoogle] = useState(true);
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [statusMessage, setStatusMessage] = useState({ type: '', text: '', link: '' });
+  const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
 
   // On mount: load saved pins and DEFAULT TO USER'S CURRENT LOCATION
   useEffect(() => {
     const data = getStoredLocations();
     setLocations(data);
-    setIsGoogleConnected(Boolean(getSavedToken()));
+    const savedToken = getSavedToken();
+    setIsGoogleConnected(Boolean(savedToken));
+
+    if (savedToken) {
+      fetchGoogleUserProfile(savedToken).then((name) => {
+        if (name) {
+          setUsername((curr) => curr || name);
+        }
+      });
+      fetchLocationsFromSheet()
+        .then((sheetLocs) => {
+          const clean = Array.isArray(sheetLocs) ? sheetLocs : [];
+          setLocations(clean);
+          setStoredLocations(clean);
+        })
+        .catch(() => {});
+    }
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -120,11 +140,15 @@ export default function PinLocation() {
   const handleConnectGoogle = async () => {
     try {
       setStatusMessage({ type: 'info', text: 'Authorizing Google Account...' });
-      await getGoogleToken(true);
+      const token = await getGoogleToken(true);
       setIsGoogleConnected(true);
+      const googleUser = await fetchGoogleUserProfile(token);
+      if (googleUser) {
+        setUsername((curr) => curr || googleUser);
+      }
       setStatusMessage({
         type: 'success',
-        text: 'Google Account successfully connected to Google Sheets!',
+        text: `Google Account successfully connected to Google Sheets!${googleUser ? ` Signed in as ${googleUser}.` : ''}`,
       });
     } catch (err) {
       console.error(err);
@@ -192,11 +216,14 @@ export default function PinLocation() {
       return;
     }
 
+    const activeUsername = (username || getAutoUsername() || 'User').trim();
+    const indiaTime = formatIndiaDateTime12h(new Date());
+
     let assignedId = getNextLocationId();
     if (saveToGoogle && isGoogleConnected) {
       try {
         const sheetId = await getNextSheetLocationId();
-        if (sheetId && sheetId >= assignedId && sheetId < 1000000) {
+        if (sheetId) {
           assignedId = sheetId;
         }
       } catch (err) {
@@ -206,49 +233,73 @@ export default function PinLocation() {
 
     const newLocation = {
       locationId: String(assignedId),
+      username: activeUsername,
       address: address.trim(),
       category: category,
       latitude: selectedPin.latitude,
       longitude: selectedPin.longitude,
       notes: notes.trim(),
-      createdAt: new Date().toISOString(),
+      createdAt: indiaTime,
     };
 
     setIsSaving(true);
     setStatusMessage({ type: 'info', text: 'Saving location...' });
 
     // 1. Save locally
-    const updated = saveStoredLocation(newLocation);
+    let updated = saveStoredLocation(newLocation);
     setLocations(updated);
     setFocusTarget(newLocation);
 
     // 2. Save to Google Sheets if requested
     if (saveToGoogle) {
       try {
-        setStatusMessage({ type: 'info', text: 'Appending to Google Sheet...' });
-        await appendLocationToSheet(newLocation);
+        setStatusMessage({ type: 'info', text: 'Saving to Google Sheet...' });
+        const sheetRes = await appendLocationToSheet(newLocation);
         setIsGoogleConnected(true);
+
+        // Fetch fresh locations from Google Sheet using GET method
+        setStatusMessage({ type: 'info', text: 'Fetching updated locations from Google Sheet...' });
+        try {
+          const freshLocations = await fetchLocationsFromSheet();
+          if (Array.isArray(freshLocations) && freshLocations.length > 0) {
+            setStoredLocations(freshLocations);
+            setLocations(freshLocations);
+          } else if (sheetRes?.assignedId) {
+            newLocation.locationId = String(sheetRes.assignedId);
+            newLocation.createdAt = sheetRes.createdAt || indiaTime;
+            updated = saveStoredLocation(newLocation);
+            setLocations(updated);
+          }
+        } catch (fetchErr) {
+          console.warn('Post-save fetch notice:', fetchErr);
+        }
 
         setStatusMessage({
           type: 'success',
-          text: `Location "${newLocation.address}" successfully saved and appended to Google Sheet!`,
-          link: SPREADSHEET_URL,
+          text: `Location saved successfully! Redirecting to View All Locations...`,
         });
+
+        setTimeout(() => {
+          navigate('/ViewAllLocation');
+        }, 800);
       } catch (err) {
         console.error('Google Sheet save error:', err);
         setStatusMessage({
           type: 'warning',
-          text: `Saved locally! Could not sync to Google Sheet: ${err.message}.`,
+          text: `Saved locally! (Google Sheet sync failed: ${err.message}). Redirecting to View All Locations...`,
         });
-      } finally {
-        setIsSaving(false);
+        setTimeout(() => {
+          navigate('/ViewAllLocation');
+        }, 1200);
       }
     } else {
       setStatusMessage({
         type: 'success',
-        text: `Location "${newLocation.address}" saved successfully!`,
+        text: `Location saved successfully! Redirecting to View All Locations...`,
       });
-      setIsSaving(false);
+      setTimeout(() => {
+        navigate('/ViewAllLocation');
+      }, 800);
     }
 
     setAddress('');
@@ -452,7 +503,7 @@ export default function PinLocation() {
 
                   {/* Existing Pinned Locations */}
                   {locations.map((loc) => {
-                    const cat = categoryConfig[loc.category] || fallbackCategory;
+                    const cat = getCategoryDetails(loc.category);
                     const markerColor = cat.accent;
                     return (
                       <Marker
@@ -482,11 +533,14 @@ export default function PinLocation() {
                             <p className="popup-address mb-1">
                               <strong>{loc.address}</strong>
                             </p>
+                            {loc.username && (
+                              <p className="small text-info mb-1">👤 By: {loc.username}</p>
+                            )}
                             {loc.notes && (
                               <p className="small text-secondary mb-1">{loc.notes}</p>
                             )}
                             <p className="popup-date">
-                              {new Date(loc.createdAt).toLocaleDateString()}
+                              {loc.createdAt || (loc.createdAt ? new Date(loc.createdAt).toLocaleDateString() : '')}
                             </p>
                           </div>
                         </Popup>
@@ -522,18 +576,6 @@ export default function PinLocation() {
                     style={{ backgroundColor: 'rgba(255, 255, 255, 0.08)', color: '#ffffff' }}
                   >
                     <div>{statusMessage.text}</div>
-                    {statusMessage.link && (
-                      <div className="mt-1">
-                        <a
-                          href={statusMessage.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="fw-bold text-info text-decoration-underline"
-                        >
-                          View in Google Sheet ↗
-                        </a>
-                      </div>
-                    )}
                     <button
                       type="button"
                       className="btn-close btn-close-white btn-sm p-2"
@@ -563,6 +605,26 @@ export default function PinLocation() {
                         👉 Tap anywhere on the map to select coordinates
                       </div>
                     )}
+                  </div>
+
+                  {/* Username (Auto-saved to Google Sheet) */}
+                  <div>
+                    <label htmlFor="pin-username" className="form-label small fw-bold text-white d-flex justify-content-between align-items-center">
+                      <span>👤 Username</span>
+                      <span className="text-secondary small fw-normal">Saved to Sheet</span>
+                    </label>
+                    <input
+                      id="pin-username"
+                      type="text"
+                      className="form-control dark-form-control"
+                      placeholder="e.g. Ram"
+                      value={username}
+                      onChange={(e) => {
+                        setUsername(e.target.value);
+                        localStorage.setItem('pinsoul_username', e.target.value);
+                      }}
+                      required
+                    />
                   </div>
 
                   {/* Address / Title */}

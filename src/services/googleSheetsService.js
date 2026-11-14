@@ -2,7 +2,7 @@
 export const GOOGLE_CLIENT_ID = '559156268261-tqcem0uudg81ccfs8qia6b6cukgqiqj8.apps.googleusercontent.com';
 export const SPREADSHEET_ID = '1GR4-v0yBN9_WHQetdo7wwqf_qHdB_VQbuZMmtJXVmRo';
 export const SPREADSHEET_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit?gid=0#gid=0`;
-export const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+export const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile';
 
 const TOKEN_KEY = 'pinsoul_google_access_token';
 const TOKEN_EXPIRY_KEY = 'pinsoul_google_token_expiry';
@@ -66,6 +66,58 @@ export function clearToken() {
 }
 
 /**
+ * Automatically get detected username from localStorage / login sessions
+ */
+export function getAutoUsername() {
+  const direct = localStorage.getItem('pinsoul_username');
+  if (direct && direct.trim()) return direct.trim();
+
+  const uname = localStorage.getItem('username');
+  if (uname && uname.trim()) return uname.trim();
+
+  try {
+    const rawUser = localStorage.getItem('user');
+    if (rawUser) {
+      if (rawUser.startsWith('{')) {
+        const u = JSON.parse(rawUser);
+        return u.name || u.username || u.email || '';
+      }
+      return rawUser.trim();
+    }
+  } catch {}
+
+  const signId = localStorage.getItem('signId');
+  if (signId && signId.trim()) return signId.trim();
+
+  return '';
+}
+
+/**
+ * Fetch Google User Profile (name/email) using OAuth access token
+ */
+export async function fetchGoogleUserProfile(token) {
+  if (!token) return '';
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const name = data.name || data.given_name || data.email || '';
+      if (name) {
+        localStorage.setItem('pinsoul_username', name);
+      }
+      return name;
+    }
+  } catch (err) {
+    console.warn('Could not fetch Google user profile:', err);
+  }
+  return '';
+}
+
+/**
  * Initialize or get Google OAuth2 Token Client
  */
 export async function getGoogleToken(promptConsent = false) {
@@ -85,13 +137,15 @@ export async function getGoogleToken(promptConsent = false) {
       tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
         scope: SHEETS_SCOPE,
-        callback: (response) => {
+        callback: async (response) => {
           if (response.error) {
             reject(new Error(response.error_description || response.error));
             return;
           }
           if (response.access_token) {
             saveToken(response.access_token, Number(response.expires_in) || 3600);
+            // Attempt to grab user's Google display name in background
+            fetchGoogleUserProfile(response.access_token).catch(() => {});
             resolve(response.access_token);
           } else {
             reject(new Error('No access token received from Google.'));
@@ -140,12 +194,45 @@ export async function getFirstSheetTitle(token) {
 }
 
 /**
+ * Format date & time in Indian Standard Time (IST) 12-hour format with AM/PM
+ * Example output: "14/11/2026, 02:45:10 PM"
+ */
+export function formatIndiaDateTime12h(dateInput = new Date()) {
+  try {
+    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (isNaN(d.getTime())) {
+      return String(dateInput || '');
+    }
+
+    const dateFormatted = d.toLocaleDateString('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }); // "14/11/2026"
+
+    const timeFormatted = d.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    }); // "02:45:10 PM"
+
+    return `${dateFormatted}, ${timeFormatted}`;
+  } catch (err) {
+    console.error('Error formatting India date:', err);
+    return new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true });
+  }
+}
+
+/**
  * Ensures header row exists in the spreadsheet
  */
 export async function ensureSheetHeaders(token, sheetTitle) {
   try {
     const checkRes = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetTitle)}!A1:H1`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetTitle)}!A1:I1`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -161,18 +248,19 @@ export async function ensureSheetHeaders(token, sheetTitle) {
     }
 
     const headerRow = [
-      'Location ID',
-      'Address',
+      'ID',
+      'Username',
+      'Place',
       'Category',
       'Latitude',
       'Longitude',
-      'Notes',
-      'Created At',
-      'Google Maps Link',
+      'Notes / Description',
+      'Date &TIme',
+      'Link',
     ];
 
     await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetTitle)}!A1:H1?valueInputOption=USER_ENTERED`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetTitle)}!A1:I1?valueInputOption=USER_ENTERED`,
       {
         method: 'PUT',
         headers: {
@@ -190,11 +278,12 @@ export async function ensureSheetHeaders(token, sheetTitle) {
 }
 
 /**
- * Inspect Google Sheet to find next numeric Location ID starting from 1001
+ * Inspect Google Sheet to find next numeric Location ID starting from 1001.
+ * Guaranteed strictly unique across the entire sheet (NOT category based).
  */
 export async function getNextSheetLocationId() {
-  const token = getSavedToken();
-  if (!token) return null;
+  const token = await getGoogleToken();
+  if (!token) return 1001;
 
   try {
     const sheetTitle = await getFirstSheetTitle(token);
@@ -212,10 +301,11 @@ export async function getNextSheetLocationId() {
       const rows = data.values || [];
       const ids = rows
         .map((r) => {
-          const match = String(r[0] || '').match(/\d+/);
+          const val = String(r?.[0] || '').trim();
+          const match = val.match(/\d+/);
           return match ? parseInt(match[0], 10) : null;
         })
-        .filter((n) => n !== null && n >= 1000);
+        .filter((n) => n !== null && n >= 1000 && n < 10000000);
 
       if (ids.length > 0) {
         return Math.max(...ids) + 1;
@@ -225,11 +315,21 @@ export async function getNextSheetLocationId() {
   } catch (err) {
     console.warn('Could not query next ID from Google Sheet:', err);
   }
-  return null;
+  return 1001;
 }
 
 /**
  * Append a location row to the Google Sheet
+ * Columns:
+ * A: ID (Unique across sheet, not category based)
+ * B: Username (Automatically saved username)
+ * C: Place (Address)
+ * D: Category
+ * E: Latitude
+ * F: Longitude
+ * G: Notes / Description
+ * H: Date &TIme (India Time, 12-hour period AM/PM)
+ * I: Link (Google Maps search link)
  */
 export async function appendLocationToSheet(location) {
   const token = await getGoogleToken();
@@ -237,21 +337,40 @@ export async function appendLocationToSheet(location) {
 
   await ensureSheetHeaders(token, sheetTitle);
 
+  // 1. Generate strictly unique ID from Google Sheet (NOT category based)
+  const nextSheetId = await getNextSheetLocationId();
+  const finalId = String(nextSheetId || location.locationId || '1001');
+  location.locationId = finalId;
+
+  // 2. Automatically resolve Username
+  const resolvedUsername = (
+    location.username ||
+    getAutoUsername() ||
+    (await fetchGoogleUserProfile(token)) ||
+    'User'
+  ).trim();
+  location.username = resolvedUsername;
+
+  // 3. Save Date & Time in India Time (12-hour period AM/PM)
+  const indiaDateTime = formatIndiaDateTime12h(location.createdAt || new Date());
+  location.createdAt = indiaDateTime;
+
   const mapsLink = `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
 
   const row = [
-    String(location.locationId || '1001'),
+    String(finalId),
+    resolvedUsername,
     location.address || '',
-    location.category || 'OTHER',
+    location.category || 'Other',
     String(location.latitude),
     String(location.longitude),
     location.notes || '',
-    location.createdAt || new Date().toISOString(),
+    indiaDateTime,
     mapsLink,
   ];
 
   const response = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetTitle)}!A:H:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetTitle)}!A:I:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
     {
       method: 'POST',
       headers: {
@@ -274,18 +393,25 @@ export async function appendLocationToSheet(location) {
     throw new Error(`Google Sheets error (${response.status}): ${errorBody}`);
   }
 
-  return await response.json();
+  const result = await response.json();
+  return {
+    ...result,
+    assignedId: finalId,
+    username: resolvedUsername,
+    createdAt: indiaDateTime,
+  };
 }
 
 /**
- * Fetch all pinned locations from Google Sheet
+ * Fetch all pinned locations from Google Sheet with support for 9-column format
+ * (ID, Username, Place, Category, Latitude, Longitude, Notes, Date & Time, Link)
  */
 export async function fetchLocationsFromSheet() {
   const token = await getGoogleToken();
   const sheetTitle = await getFirstSheetTitle(token);
 
   const response = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetTitle)}!A2:H`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetTitle)}!A2:I`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -306,18 +432,53 @@ export async function fetchLocationsFromSheet() {
   const rows = data.values || [];
 
   return rows
-    .filter((row) => row && row.length >= 5)
+    .filter((row) => row && row.length >= 4)
     .map((row, index) => {
-      const parsedId = String(row[0] || (1001 + index)).trim();
+      // Detect if row has Username at column B:
+      // In 9-col layout: [ID, Username, Place, Category, Latitude, Longitude, Notes, Date, Link]
+      // In 8-col layout: [ID, Place, Category, Latitude, Longitude, Notes, Date, Link]
+      const hasUsernameCol = isNaN(parseFloat(row[3])) && !isNaN(parseFloat(row[4])) && !isNaN(parseFloat(row[5]));
+
+      let locationId = String(row[0] || (1001 + index)).trim();
+      let username = '';
+      let address = '';
+      let category = '';
+      let latitude = 0;
+      let longitude = 0;
+      let notes = '';
+      let createdAt = '';
+      let mapsLink = '';
+
+      if (hasUsernameCol) {
+        username = row[1] || '';
+        address = row[2] || 'Pinned Location';
+        category = row[3] || 'Other';
+        latitude = parseFloat(row[4]);
+        longitude = parseFloat(row[5]);
+        notes = row[6] || '';
+        createdAt = row[7] || '';
+        mapsLink = row[8] || '';
+      } else {
+        username = '';
+        address = row[1] || 'Pinned Location';
+        category = row[2] || 'Other';
+        latitude = parseFloat(row[3]);
+        longitude = parseFloat(row[4]);
+        notes = row[5] || '';
+        createdAt = row[6] || '';
+        mapsLink = row[7] || '';
+      }
+
       return {
-        locationId: parsedId,
-        address: row[1] || 'Pinned Location',
-        category: (row[2] || 'OTHER').toUpperCase().replace(/\s+/g, '_'),
-        latitude: parseFloat(row[3]),
-        longitude: parseFloat(row[4]),
-        notes: row[5] || '',
-        createdAt: row[6] || new Date().toISOString(),
-        mapsLink: row[7] || '',
+        locationId,
+        username,
+        address,
+        category,
+        latitude,
+        longitude,
+        notes,
+        createdAt,
+        mapsLink,
       };
     })
     .filter((loc) => Number.isFinite(loc.latitude) && Number.isFinite(loc.longitude));

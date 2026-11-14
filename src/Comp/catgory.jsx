@@ -18,14 +18,26 @@ export const categoryConfig = {
 
 export const fallbackCategory = categoryConfig.Other || { icon: '📍', accent: '#a8abb2' };
 
-export function getCategoryIcon(category) {
-  const normalized = String(category || '').trim().toLowerCase().replace(/_/g, ' ');
-  const matchedKey =
-    categoryConfig[category]
-      ? category
-      : Object.keys(categoryConfig).find((key) => key.toLowerCase() === normalized);
+/**
+ * Get category configuration safely (case-insensitive, underscore-friendly with fallback)
+ */
+export function getCategoryDetails(category) {
+  if (!category) return fallbackCategory;
+  if (categoryConfig[category]) return categoryConfig[category];
 
-  const config = (matchedKey ? categoryConfig[matchedKey] : null) || fallbackCategory;
+  const normalized = String(category).trim().toLowerCase().replace(/_/g, ' ');
+  const matchedKey = Object.keys(categoryConfig).find(
+    (key) => key.toLowerCase() === normalized
+  );
+
+  return (matchedKey ? categoryConfig[matchedKey] : null) || fallbackCategory;
+}
+
+/**
+ * Generates Leaflet DivIcon for a given category
+ */
+export function getCategoryIcon(category) {
+  const config = getCategoryDetails(category);
   const accent = config?.accent || '#a8abb2';
   const icon = config?.icon || '📍';
 

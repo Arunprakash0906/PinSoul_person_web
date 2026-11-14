@@ -5,12 +5,11 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import '../css/AllPinSoulLocaiton.css';
 import pinSoulLogo from '../assets/PinSoul_logo.png';
-import { getStoredLocations, deleteStoredLocation } from '../utils/locationStorage';
+import { getStoredLocations, deleteStoredLocation, setStoredLocations } from '../utils/locationStorage';
 import {
   fetchLocationsFromSheet,
   getSavedToken,
   getGoogleToken,
-  SPREADSHEET_URL,
 } from '../services/googleSheetsService';
 
 // Fix default marker icons
@@ -21,7 +20,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-import { categoryConfig, getCategoryIcon } from './catgory';
+import { categoryConfig, getCategoryIcon, fallbackCategory, getCategoryDetails } from './catgory';
 
 function getLocationShareLink(location) {
   const coordinates = `${location.latitude},${location.longitude}`;
@@ -67,7 +66,21 @@ export default function ViewAllLocation() {
   useEffect(() => {
     const data = getStoredLocations();
     setAllLocations(data);
-    setIsGoogleConnected(Boolean(getSavedToken()));
+    const token = getSavedToken();
+    setIsGoogleConnected(Boolean(token));
+
+    // Auto-sync from Google Sheet on mount if token is saved
+    if (token) {
+      fetchLocationsFromSheet()
+        .then((sheetLocations) => {
+          const cleanLocations = Array.isArray(sheetLocations) ? sheetLocations : [];
+          setAllLocations(cleanLocations);
+          setStoredLocations(cleanLocations);
+        })
+        .catch((err) => {
+          console.warn('Auto-sync notice on mount:', err);
+        });
+    }
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -90,17 +103,21 @@ export default function ViewAllLocation() {
       setIsGoogleConnected(true);
 
       const sheetLocations = await fetchLocationsFromSheet();
+      const cleanLocations = Array.isArray(sheetLocations) ? sheetLocations : [];
 
-      if (sheetLocations.length === 0) {
+      // Google Sheet is the single source of truth - update both state and local storage
+      setAllLocations(cleanLocations);
+      setStoredLocations(cleanLocations);
+
+      if (cleanLocations.length === 0) {
         setSyncNotice({
-          type: 'warning',
-          text: 'Google Sheet is currently empty. Pins you add will appear here.',
+          type: 'info',
+          text: 'Google Sheet is empty (0 locations). All pins have been synced and cleared to match your sheet.',
         });
       } else {
-        setAllLocations(sheetLocations);
         setSyncNotice({
           type: 'success',
-          text: `Successfully synced ${sheetLocations.length} location(s) from your Google Sheet!`,
+          text: `Successfully synced ${cleanLocations.length} location(s) from your Google Sheet!`,
         });
       }
     } catch (err) {
@@ -171,16 +188,24 @@ export default function ViewAllLocation() {
 
   // Filter locations by selected category
   const filteredLocations = selectedCategory
-    ? allLocations.filter((l) => l.category === selectedCategory)
+    ? allLocations.filter(
+        (l) =>
+          String(l.category || '').toLowerCase().replace(/_/g, ' ') ===
+          String(selectedCategory).toLowerCase().replace(/_/g, ' ')
+      )
     : allLocations;
 
   // Calculate map center: selectedLocation -> first location -> current user location -> fallback
   const getMapCenter = () => {
-    if (selectedLocation) return [selectedLocation.latitude, selectedLocation.longitude];
-    if (filteredLocations.length > 0) {
-      return [filteredLocations[0].latitude, filteredLocations[0].longitude];
+    if (selectedLocation && Number.isFinite(Number(selectedLocation.latitude)) && Number.isFinite(Number(selectedLocation.longitude))) {
+      return [Number(selectedLocation.latitude), Number(selectedLocation.longitude)];
     }
-    if (userLocation) return userLocation;
+    if (filteredLocations.length > 0 && Number.isFinite(Number(filteredLocations[0].latitude)) && Number.isFinite(Number(filteredLocations[0].longitude))) {
+      return [Number(filteredLocations[0].latitude), Number(filteredLocations[0].longitude)];
+    }
+    if (userLocation && Array.isArray(userLocation) && Number.isFinite(Number(userLocation[0])) && Number.isFinite(Number(userLocation[1]))) {
+      return [Number(userLocation[0]), Number(userLocation[1])];
+    }
     return [20.0, 0.0];
   };
 
@@ -253,6 +278,26 @@ export default function ViewAllLocation() {
                 </>
               )}
             </button>
+            {allLocations.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-outline-danger btn-sm rounded-pill px-3 py-1 fw-semibold d-flex align-items-center gap-1 shadow-sm"
+                onClick={() => {
+                  if (window.confirm('Clear all pin locations from website?')) {
+                    setStoredLocations([]);
+                    setAllLocations([]);
+                    setSyncNotice({
+                      type: 'info',
+                      text: 'All pin locations cleared from website.',
+                    });
+                  }
+                }}
+                title="Clear all pin locations from website"
+              >
+                <span>🗑️</span> <span className="d-none d-sm-inline">Clear All</span>
+              </button>
+            )}
+
             <button
               type="button"
               className="btn btn-primary btn-sm rounded-pill px-3 py-1 fw-semibold shadow-sm d-flex align-items-center gap-1"
@@ -361,77 +406,92 @@ export default function ViewAllLocation() {
               </div>
 
               {/* Responsive Map Container */}
-              <div className="responsive-map-wrapper">
-                {filteredLocations.length === 0 ? (
-                  <div className="h-100 d-flex flex-column align-items-center justify-content-center text-muted p-4">
-                    <p className="fs-6 mb-2 text-secondary">No locations found in this category.</p>
+              <div className="responsive-map-wrapper position-relative">
+                <MapContainer
+                  center={getMapCenter()}
+                  zoom={filteredLocations.length === 1 ? 14 : filteredLocations.length > 0 ? 6 : 4}
+                  style={{ height: '100%', width: '100%' }}
+                >
+                  <MapFocus location={selectedLocation} />
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    maxZoom={19}
+                  />
+
+                  {filteredLocations.map((location) => {
+                    const lat = Number(location.latitude);
+                    const lng = Number(location.longitude);
+                    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+                    const category = getCategoryDetails(location.category);
+                    const markerColor = category.accent;
+                    return (
+                      <Marker
+                        key={location.locationId}
+                        position={[lat, lng]}
+                        icon={getCategoryIcon(location.category)}
+                        eventHandlers={{
+                          click: () => handleLocationClick(location),
+                        }}
+                      >
+                        <Popup className="custom-location-popup">
+                          <div
+                            className="popup-content"
+                            style={{ '--marker-color': markerColor }}
+                          >
+                            <div className="d-flex align-items-center justify-content-between mb-1 gap-2">
+                              {location.category && (
+                                <span
+                                  className="popup-category-badge"
+                                  style={{
+                                    background: `${markerColor}22`,
+                                    color: markerColor,
+                                    border: `1px solid ${markerColor}55`,
+                                  }}
+                                >
+                                  {location.category.replaceAll('_', ' ')}
+                                </span>
+                              )}
+                            </div>
+                            <p className="popup-address mb-1">
+                              <strong>{location.address}</strong>
+                            </p>
+                            {location.username && (
+                              <p className="small text-info mb-1">👤 By: {location.username}</p>
+                            )}
+                            {location.notes && (
+                              <p className="small text-secondary mb-1">{location.notes}</p>
+                            )}
+                            <p className="popup-date">
+                              {location.createdAt || ''}
+                            </p>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    );
+                  })}
+                </MapContainer>
+
+                {filteredLocations.length === 0 && (
+                  <div
+                    className="position-absolute bottom-0 start-50 translate-middle-x mb-4 px-4 py-2 rounded-pill shadow-lg text-center"
+                    style={{
+                      zIndex: 1000,
+                      backgroundColor: 'rgba(15, 20, 34, 0.92)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      backdropFilter: 'blur(8px)',
+                    }}
+                  >
+                    <span className="small text-light me-2">No pins in this view yet.</span>
                     <button
                       type="button"
-                      className="btn btn-primary btn-sm"
+                      className="btn btn-primary btn-sm rounded-pill px-3 py-0"
                       onClick={() => navigate('/pinLocation')}
                     >
-                      Pin a location now
+                      + Pin Soul
                     </button>
                   </div>
-                ) : (
-                  <MapContainer
-                    center={getMapCenter()}
-                    zoom={filteredLocations.length === 1 ? 14 : 4}
-                    style={{ height: '100%', width: '100%' }}
-                  >
-                    <MapFocus location={selectedLocation} />
-                    <TileLayer
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                      maxZoom={19}
-                    />
-
-                    {filteredLocations.map((location) => {
-                      const category = categoryConfig[location.category] || fallbackCategory;
-                      const markerColor = category.accent;
-                      return (
-                        <Marker
-                          key={location.locationId}
-                          position={[location.latitude, location.longitude]}
-                          icon={getCategoryIcon(location.category)}
-                          eventHandlers={{
-                            click: () => handleLocationClick(location),
-                          }}
-                        >
-                          <Popup className="custom-location-popup">
-                            <div
-                              className="popup-content"
-                              style={{ '--marker-color': markerColor }}
-                            >
-                              <div className="d-flex align-items-center justify-content-between mb-1 gap-2">
-                                {location.category && (
-                                  <span
-                                    className="popup-category-badge"
-                                    style={{
-                                      background: `${markerColor}22`,
-                                      color: markerColor,
-                                      border: `1px solid ${markerColor}55`,
-                                    }}
-                                  >
-                                    {location.category.replaceAll('_', ' ')}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="popup-address mb-1">
-                                <strong>{location.address}</strong>
-                              </p>
-                              {location.notes && (
-                                <p className="small text-secondary mb-1">{location.notes}</p>
-                              )}
-                              <p className="popup-date">
-                                {new Date(location.createdAt).toLocaleDateString()}
-                              </p>
-                            </div>
-                          </Popup>
-                        </Marker>
-                      );
-                    })}
-                  </MapContainer>
                 )}
               </div>
             </div>
@@ -471,7 +531,7 @@ export default function ViewAllLocation() {
                   </div>
                 ) : (
                   filteredLocations.map((loc) => {
-                    const cat = categoryConfig[loc.category] || fallbackCategory;
+                    const cat = getCategoryDetails(loc.category);
                     const isSelected = selectedLocation?.locationId === loc.locationId;
 
                     return (
@@ -515,9 +575,19 @@ export default function ViewAllLocation() {
                           className="d-flex align-items-center justify-content-between pt-2 gap-2 flex-wrap"
                           style={{ borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}
                         >
-                          <small className="text-secondary">
-                            📅 {new Date(loc.createdAt).toLocaleDateString()}
-                          </small>
+                          <div className="d-flex align-items-center gap-2 flex-wrap">
+                            <span className="badge bg-secondary" style={{ fontSize: '0.72rem' }}>
+                              #{loc.locationId}
+                            </span>
+                            {loc.username && (
+                              <small className="text-info fw-semibold">
+                                👤 {loc.username}
+                              </small>
+                            )}
+                            <small className="text-secondary">
+                              🕒 {loc.createdAt || ''}
+                            </small>
+                          </div>
 
                           <div className="location-item-actions ms-auto">
                             <button

@@ -95,10 +95,32 @@ export function getNextLocationId(additionalLocations = []) {
   return Math.max(...numericIds) + 1;
 }
 
+export function setStoredLocations(locations) {
+  try {
+    if (Array.isArray(locations)) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
+      return locations;
+    }
+  } catch (e) {
+    console.error('Failed to set locations in localStorage:', e);
+  }
+  return [];
+}
+
 export function saveStoredLocation(newLoc) {
   try {
     const current = getStoredLocations();
-    const updated = [newLoc, ...current];
+    // If location already exists with same locationId, replace it to avoid duplicate
+    const existingIndex = current.findIndex(
+      (l) => String(l.locationId) === String(newLoc.locationId)
+    );
+    let updated;
+    if (existingIndex >= 0) {
+      updated = [...current];
+      updated[existingIndex] = { ...current[existingIndex], ...newLoc };
+    } else {
+      updated = [newLoc, ...current];
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     return updated;
   } catch (e) {
