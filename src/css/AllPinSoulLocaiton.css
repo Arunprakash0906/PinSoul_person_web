@@ -1,0 +1,516 @@
+/* Pinsoul Location Styles - Dark / Black Theme */
+
+.category-marker-wrapper {
+  background: transparent !important;
+  border: none !important;
+}
+
+.category-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--marker-color, #3b82f6);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  font-size: 20px;
+  border: 2.5px solid #ffffff;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+}
+
+.category-marker > * {
+  transform: rotate(45deg);
+}
+
+.category-marker:hover {
+  transform: rotate(-45deg) scale(1.18);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
+/* Custom Popup for Dark Theme */
+.custom-location-popup .leaflet-popup-content-wrapper {
+  border-radius: 14px;
+  padding: 4px;
+  background: #0f1422;
+  color: #f8fafc;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  border-top: 4px solid var(--marker-color, #3b82f6);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.custom-location-popup .leaflet-popup-tip {
+  background: #0f1422;
+}
+
+.custom-location-popup .leaflet-popup-content {
+  margin: 12px 14px;
+  line-height: 1.4;
+  color: #f8fafc;
+}
+
+.popup-address {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #ffffff;
+}
+
+.popup-category-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  margin-bottom: 6px;
+}
+
+.popup-date {
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.sky-blue-pulse-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background-color: #38bdf8;
+  border-radius: 50%;
+  animation: pulse-dot 1.5s infinite;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+@keyframes pulse-dot {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(56, 189, 248, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0);
+  }
+}
+
+.category-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background-color: rgba(59, 130, 246, 0.15);
+  color: var(--category-accent, #38bdf8);
+  border: 1px solid var(--category-accent, #38bdf8);
+  width: fit-content;
+}
+
+/* Dark Location Items in List */
+.location-item {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 14px;
+  background: #0f1422;
+  color: #f8fafc;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+
+.location-item:hover {
+  border-color: #3b82f6;
+  background: #141b2e;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2);
+  transform: translateY(-2px);
+}
+
+.location-item.active {
+  border-color: #38bdf8;
+  background: #15223a;
+  box-shadow: 0 4px 18px rgba(56, 189, 248, 0.25);
+}
+
+.location-item-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.share-location-btn {
+  background: rgba(37, 99, 235, 0.18);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.share-location-btn:hover {
+  background: rgba(37, 99, 235, 0.35);
+  color: #93c5fd;
+}
+
+.delete-btn {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.28);
+  color: #fca5a5;
+}
+
+/* Modal share dialog - Dark Theme */
+.location-share-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 16px;
+}
+
+.location-share-dialog {
+  background: #0f1422;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+  border-radius: 18px;
+  width: 100%;
+  max-width: 520px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  padding: 24px;
+  animation: modalIn 0.25s ease-out;
+  text-align: left;
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.location-share-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 14px;
+}
+
+.location-share-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: #38bdf8;
+  text-transform: uppercase;
+}
+
+.location-share-heading h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 4px 0;
+}
+
+.location-share-address {
+  font-size: 14px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.close-location-share {
+  background: #161c2d;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.close-location-share:hover {
+  background: #1f273d;
+  color: #ffffff;
+}
+
+.location-share-controls {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.location-share-controls input {
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #ffffff;
+  background: #161c2d;
+}
+
+.copy-location-link {
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.copy-location-link:hover {
+  background: #1d4ed8;
+}
+
+.location-share-status {
+  font-size: 13px;
+  color: #4ade80;
+  font-weight: 500;
+  margin-top: 6px;
+}
+
+.open-location-map {
+  display: inline-block;
+  color: #38bdf8;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  margin-top: 8px;
+}
+
+.open-location-map:hover {
+  text-decoration: underline;
+  color: #7dd3fc;
+}
+
+.location-share-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cancel-location-share {
+  background: #161c2d;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cancel-location-share:hover {
+  background: #1f273d;
+  color: #ffffff;
+}
+
+/* ============================================================
+   RESPONSIVE MAP CONTAINER
+   ============================================================ */
+
+.responsive-map-wrapper {
+  height: 580px;
+  width: 100%;
+  border-radius: 16px;
+  overflow: hidden;
+  background-color: #0b0f19;
+}
+
+@media (max-width: 991.98px) {
+  .responsive-map-wrapper {
+    height: 420px;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .responsive-map-wrapper {
+    height: 350px;
+  }
+}
+
+/* Action button cards */
+.action-btn-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.action-btn-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.2) !important;
+}
+
+/* Dark mode form controls */
+.dark-form-control {
+  background-color: #161c2d !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+.dark-form-control:focus {
+  background-color: #1b2338 !important;
+  border-color: #3b82f6 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 0 0.25rem rgba(59, 130, 246, 0.25) !important;
+}
+
+.dark-form-control option {
+  background-color: #161c2d;
+  color: #ffffff;
+}
+
+/* Header brand logo badge */
+.pinsoul-logo-container {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+
+.pinsoul-logo-container:hover {
+  transform: scale(1.05);
+}
+
+.pinsoul-logo-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Pulsing status dot */
+.status-dot-pulse {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: #22c55e;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  animation: pulse-dot-green 1.8s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pulse-dot-green {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+/* Header buttons styling */
+.header-btn {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  border-radius: 50px;
+  padding: 0 14px;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+@media (max-width: 575.98px) {
+  .header-btn {
+    height: 34px;
+    padding: 0 10px;
+    font-size: 0.8rem;
+  }
+}
+
+/* Mobile adjustments */
+@media (max-width: 575.98px) {
+  .location-item {
+    padding: 12px;
+  }
+
+  .location-item h3 {
+    font-size: 14px !important;
+  }
+
+  .location-share-dialog {
+    padding: 16px;
+    margin: 8px;
+    border-radius: 14px;
+  }
+
+  .location-share-heading h2 {
+    font-size: 18px;
+  }
+
+  .location-share-controls {
+    flex-direction: column;
+  }
+
+  .location-share-controls input,
+  .copy-location-link {
+    width: 100%;
+  }
+
+  .category-marker {
+    width: 36px;
+    height: 36px;
+    font-size: 17px;
+  }
+}
